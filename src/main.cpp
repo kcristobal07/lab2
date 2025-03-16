@@ -1,72 +1,127 @@
-/*************************************************** 
-  This is a library for the CAP1188 I2C/SPI 8-chan Capacitive Sensor
-
-  Designed specifically to work with the CAP1188 sensor from Adafruit
-  ----> https://www.adafruit.com/products/1602
-
-  These sensors use I2C/SPI to communicate, 2+ pins are required to  
-  interface
-  Adafruit invests time and resources providing this open source code, 
-  please support Adafruit and open-source hardware by purchasing 
-  products from Adafruit!
-
-  Written by Limor Fried/Ladyada for Adafruit Industries.  
-  BSD license, all text above must be included in any redistribution
- ****************************************************/
-
-// Adapted from CAP118 Library Example: https://registry.platformio.org/libraries/adafruit/Adafruit%20CAP1188%20Library
- 
 #include <Wire.h>
-#include <SPI.h>
 #include <Adafruit_CAP1188.h>
-#include <TFT_eSPI.h> // Include the TFT_eSPI library
+#include <TFT_eSPI.h>
 
-#define PIN_BLUE 12
+#define BLUE_PIN 12 // Define the blue pin
+#define RED_PIN 25 // TO-DO - Define the red pin
+#define GREEN_PIN 27 // TO-DO - Define the green pin
+#define YELLOW_PIN 26 // TO-DO - Define the yellow pin
+#define TOUCH_THRESHOLD 500
+
+
+int touchThreshold = 0;
+bool isSequenceActivated = false;
+
+
+#define BUZZER_PIN 15 // TO-DO - Define the buzzer pin
 
 Adafruit_CAP1188 cap = Adafruit_CAP1188();
-
 TFT_eSPI tft = TFT_eSPI(); // Create an instance of the TFT_eSPI library
 
 void setup() {
+    // set pins as output
+    pinMode(BLUE_PIN, OUTPUT); // Set the blue pin as an output
+    pinMode(RED_PIN, OUTPUT);  //...
+    pinMode(GREEN_PIN, OUTPUT); 
+    pinMode(YELLOW_PIN, OUTPUT); 
 
-  pinMode(PIN_BLUE, OUTPUT);
-  Serial.begin(9600);
-  Serial.println("CAP1188 test!");
+    //pinMode(BUZZER_PIN, OUTPUT); // Set the buzzer pin as an output
 
-  // Initialize the sensor, if using i2c you can pass in the i2c address
-  // if (!cap.begin(0x28)) {
-  if (!cap.begin()) {
-    Serial.println("CAP1188 not found");
-    while (1);
+    
+    // create pulsing/beeping noise rather than constant sound
+    /*
+    tone(BUZZER_PIN, 1000); // Set TONE of buzzer???
+    delay(2000);
+    noTone(BUZZER_PIN); // Turn off buzzer
+    */
+
+    digitalWrite(BUZZER_PIN, HIGH); // turn off buzzer
+    digitalWrite(RED_PIN, HIGH); 
+    delay(1000);
+    digitalWrite(YELLOW_PIN, HIGH); 
+    delay(1000);
+    digitalWrite(RED_PIN, LOW); 
+    digitalWrite(YELLOW_PIN, LOW); 
+    digitalWrite(GREEN_PIN, HIGH); // start as green
+    delay(1000);
+
+    Serial.begin(9600);
+    Serial.println("CAP1188 test!");
+
+    if (!cap.begin()) {
+        Serial.println("CAP1188 not found");
+        while (1);
+    }
+    Serial.println("CAP1188 found!");
+}
+
+void greenBuzzerPattern() {
+    tone(BUZZER_PIN, 1000); // Beep at 1kHz
+    delay(500);
+    noTone(BUZZER_PIN);
+    delay(1500);
+}
+
+void redBuzzerPattern() {
+    tone(BUZZER_PIN, 1000); 
+    delay(250);
+    noTone(BUZZER_PIN);
+    delay(250);
+}
+
+void stopLightSequence() {
+  /**
+   * Green light stays on for 5 seconds,
+   * then green light turns off and the yellow light turns on for 2 seconds,
+   * then yellow light turns off and the red light turns on for 10 seconds,
+   * then the red and yellow light remain on for 2 seconds,
+   * then the red and yellow lights turn off and the green light turns on.
+   */
+  // digitalWrite(BUZZER_PIN, HIGH); // turn on buzzer
+unsigned long greenStartMilis = millis(); // Start of sample window
+while (millis() - greenStartMilis < 5000) { // check that start
+    greenBuzzerPattern();
+}
+
+  //tone(BUZZER_PIN, 500); // turn on buzzer 
+  // delay(5000);
+  digitalWrite(GREEN_PIN, LOW); // turn off green
+  digitalWrite(YELLOW_PIN, HIGH); // turn on yellow
+  delay(2000);
+  digitalWrite(YELLOW_PIN, LOW); // turn off yellow
+
+  digitalWrite(RED_PIN, HIGH); // turn on red
+  //delay(10000);
+  unsigned long redStartMilis = millis();
+  while (millis() - redStartMilis < 10000) {
+    redBuzzerPattern();
   }
-  Serial.println("CAP1188 found!");
+  
+  digitalWrite(YELLOW_PIN, HIGH);
+  delay(2000);
+  digitalWrite(YELLOW_PIN, LOW);
+  digitalWrite(RED_PIN, LOW); // turn off red
 
-  // intializing TFT display for on-screen counter of pins
-  tft.init(); // Initialize the TFT display
-  tft.fillScreen(TFT_BLACK); // Fill the screen with black color
-  tft.setTextColor(TFT_WHITE, TFT_BLACK); // Set the text color to white
-  tft.setTextSize(3);
+  digitalWrite(GREEN_PIN, HIGH); 
+  //digitalWrite(BUZZER_PIN, LOW); // turn off buzzer 
+  //noTone(BUZZER_PIN); // Turn off buzzer
+
+  isSequenceActivated = false;
 }
 
 void loop() {
-  uint8_t touched = cap.touched();
+    uint8_t touched = cap.touched();
 
-  int touchCount = 0; // intializing touch count to 0
-
-  if (touched == 0) {
-    // No touch detected
-    tft.drawNumber(0, 0, 0, 6); // reset number to zero if no touches are set
-    return;
-  }
-  
-    if (touched & (1 << 7)) { // scan bitmap touched for valid bits signifing contact with pin
-      touchCount += 1;
-      digitalWrite(PIN_BLUE, HIGH); // turn on blue LED if pin is touched
-      delay(1000);
-      digitalWrite(PIN_BLUE, LOW); // turn off blue LED after 1 second
-      delay(1000);
+    if (touched == 0) {
+      greenBuzzerPattern();
+        return; 
     }
-  tft.drawNumber(touchCount, 0, 0, 6); // drawing touch count on screen once the cap touch pins are scanned
-  
-  delay(100);
+
+    if (touched & (1 << 7)) {
+      stopLightSequence();
+      touched = cap.touched(); // resample touched to eliminate unwanted touch looping
+    } else {
+        digitalWrite(GREEN_PIN, HIGH); // when button is not pressed, green light is on
+        
+    }
 }
